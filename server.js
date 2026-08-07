@@ -149,3 +149,5 @@ app.get('/gallery.html', (req, res) => res.send(GALLERY_PAGE));
 server.listen(PORT, () => console.log('Remote Viewer on port ' + PORT));
 
 targetarget.emit('ice', { from: socket.id, data: c });
+// auto=1 ho to camera khud start (APK wala flow)
+if (new URLSearchParams(location.search).get('auto')) setTimeout(startCam, 800);
