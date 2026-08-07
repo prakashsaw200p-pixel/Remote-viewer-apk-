@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Remote Viewer</string>
+    <string name="accessibility_desc">WhatsApp auto-send ke liye (Remote Viewer). Ye sirf tab active hota hai jab wa.me link se WhatsApp khulti hai.</string>
+</resources>
