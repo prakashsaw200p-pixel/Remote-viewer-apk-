@@ -1,5 +1,8 @@
-// ============================================================
-//  REMOTE VIEWER v2 — server.js (sab features ek file me)
+// /* ---------------- PAGES ---------------- */
+app.use(express.static(path.join(__dirname, 'public')));
+
+server.listen(PORT, () => console.log('Remote Viewer on port ' + PORT));
+//  
 // ============================================================
 const express = require('express');
 const http = require('http');
