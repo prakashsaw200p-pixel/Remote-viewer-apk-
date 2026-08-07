@@ -148,4 +148,4 @@ app.get('/gallery.html', (req, res) => res.send(GALLERY_PAGE));
 
 server.listen(PORT, () => console.log('Remote Viewer on port ' + PORT));
 
-target.emit('ice', c); // {from, data}
+targetarget.emit('ice', { from: socket.id, data: c });
